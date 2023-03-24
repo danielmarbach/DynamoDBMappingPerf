@@ -12,7 +12,7 @@ namespace DynamoDBMappingPerf;
 
 
 [Config(typeof(Config))]
-public class SimpleClassMapping
+public class SimpleClassMappingSerialization
 {
     private Fixture fixture;
     private Simple simple;

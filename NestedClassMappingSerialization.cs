@@ -11,7 +11,7 @@ using NServiceBus.Persistence.DynamoDB;
 namespace DynamoDBMappingPerf;
 
 [Config(typeof(Config))]
-public class NestedClassMapping
+public class NestedClassMappingSerialization
 {
     private Fixture fixture;
     private Nested nested;
