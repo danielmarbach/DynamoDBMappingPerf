@@ -30,7 +30,7 @@ namespace NServiceBus.Persistence.DynamoDB
 
         public static TValue? Deserialize<TValue>(Dictionary<string, AttributeValue> attributeValues)
         {
-            var jsonObject = DeserializeElementToAttributeMap(attributeValues);
+            var jsonObject = DeserializeElementFromAttributeMap(attributeValues);
             return jsonObject.Deserialize<TValue>(serializerOptions);
         }
 
@@ -134,87 +134,102 @@ namespace NServiceBus.Persistence.DynamoDB
             return new AttributeValue { M = SerializeElementToAttributeMap(element) };
         }
 
-        static JsonObject DeserializeElementToAttributeMap(Dictionary<string, AttributeValue> attributeValues)
+        static JsonObject DeserializeElementFromAttributeMap(Dictionary<string, AttributeValue> attributeValues)
         {
             var jsonObject = new JsonObject();
             foreach (var kvp in attributeValues)
             {
                 AttributeValue attributeValue = kvp.Value;
                 string attributeName = kvp.Key;
-                if (attributeValue.IsMSet)
-                {
-                    jsonObject.Add(attributeName, DeserializeElementToAttributeMap(attributeValue.M));
-                    continue;
-                }
 
-                if (attributeValue.B != null)
-                {
-                    jsonObject.Add(attributeName, new JsonObject
-                    {
-                        [MemoryStreamConverter.PropertyName] = Convert.ToBase64String(attributeValue.B.ToArray())
-                    });
-                    continue;
-                }
-
-                if (attributeValue.BS is { Count: > 0 })
-                {
-                    var array = new JsonArray();
-                    foreach (var memoryStream in attributeValue.BS)
-                    {
-                        array.Add(new JsonObject
-                        {
-                            [MemoryStreamConverter.PropertyName] = Convert.ToBase64String(memoryStream.ToArray())
-                        });
-                    }
-                    jsonObject.Add(attributeName, array);
-                    continue;
-                }
-
-                if (attributeValue.SS is { Count: > 0 })
-                {
-                    var array = new JsonArray();
-                    foreach (var stringValue in attributeValue.SS)
-                    {
-                        array.Add(stringValue);
-                    }
-                    jsonObject.Add(attributeName, array);
-                    continue;
-                }
-
-                if (attributeValue.NS is { Count: > 0 })
-                {
-                    var array = new JsonArray();
-                    foreach (var numberValue in attributeValue.NS)
-                    {
-                        array.Add(JsonNode.Parse(numberValue));
-                    }
-                    jsonObject.Add(attributeName, array);
-                    continue;
-                }
-
-                if (attributeValue.IsBOOLSet)
-                {
-                    jsonObject.Add(attributeName, attributeValue.BOOL);
-                    continue;
-                }
-
-                if (attributeValue.NULL)
-                {
-                    jsonObject.Add(attributeName, default);
-                    continue;
-                }
-
-                if (attributeValue.N != null)
-                {
-                    jsonObject.Add(attributeName, JsonNode.Parse(attributeValue.N));
-                    continue;
-                }
-
-                jsonObject.Add(attributeName, attributeValue.S);
-
+                jsonObject.Add(attributeName, DeserializeElement(attributeValue));
             }
 
             return jsonObject;
+        }
+
+        static JsonNode? DeserializeElement(AttributeValue attributeValue)
+        {
+            if (attributeValue.IsMSet)
+            {
+                return DeserializeElementFromAttributeMap(attributeValue.M);
+            }
+
+            if (attributeValue.IsLSet)
+            {
+                return DeserializeElementFromListSet(attributeValue.L);
+            }
+
+            if (attributeValue.B != null)
+            {
+                return new JsonObject
+                {
+                    [MemoryStreamConverter.PropertyName] = Convert.ToBase64String(attributeValue.B.ToArray())
+                };
+            }
+
+            if (attributeValue.BS is { Count: > 0 })
+            {
+                var array = new JsonArray();
+                foreach (var memoryStream in attributeValue.BS)
+                {
+                    array.Add(new JsonObject
+                    {
+                        [MemoryStreamConverter.PropertyName] = Convert.ToBase64String(memoryStream.ToArray())
+                    });
+                }
+
+                return array;
+            }
+
+            if (attributeValue.SS is { Count: > 0 })
+            {
+                var array = new JsonArray();
+                foreach (var stringValue in attributeValue.SS)
+                {
+                    array.Add(stringValue);
+                }
+
+                return array;
+            }
+
+            if (attributeValue.NS is { Count: > 0 })
+            {
+                var array = new JsonArray();
+                foreach (var numberValue in attributeValue.NS)
+                {
+                    array.Add(JsonNode.Parse(numberValue));
+                }
+
+                return array;
+            }
+
+            if (attributeValue.IsBOOLSet)
+            {
+                return attributeValue.BOOL;
+            }
+
+            if (attributeValue.NULL)
+            {
+                return default;
+            }
+
+            if (attributeValue.N != null)
+            {
+                return JsonNode.Parse(attributeValue.N);
+            }
+
+            return attributeValue.S;
+        }
+
+        static JsonArray DeserializeElementFromListSet(List<AttributeValue> attributeValues)
+        {
+            var array = new JsonArray();
+            foreach (var attributeValue in attributeValues)
+            {
+                array.Add(DeserializeElement(attributeValue));
+            }
+            return array;
         }
     }
 }
