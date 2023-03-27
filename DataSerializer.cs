@@ -4,7 +4,6 @@ namespace NServiceBus.Persistence.DynamoDB
     using System;
     using System.Collections.Generic;
     using System.IO;
-    using System.Linq;
     using System.Text.Json;
     using System.Text.Json.Nodes;
     using Amazon.DynamoDBv2.Model;
@@ -99,25 +98,54 @@ namespace NServiceBus.Persistence.DynamoDB
         static AttributeValue SerializeElementToList(JsonElement element)
         {
             var values = new List<AttributeValue>();
+            bool probablyNumberSet = false, probablyStringSet = false, probablyBinarySet = false;
             foreach (var innerElement in element.EnumerateArray())
             {
                 AttributeValue serializeElement = SerializeElement(innerElement);
+                if (serializeElement.N is not null)
+                {
+                    probablyNumberSet = true;
+                }
+                else if (serializeElement.S is not null)
+                {
+                    probablyStringSet = true;
+                }
+                else if (serializeElement.B is not null)
+                {
+                    probablyBinarySet = true;
+                }
                 values.Add(serializeElement);
             }
 
-            // TODO: Can we make this better?
-            // TODO: What happens with mixed values?
-            if (values.All(x => x.N is not null))
+            if (probablyNumberSet && !probablyStringSet && !probablyBinarySet)
             {
-                return new AttributeValue { NS = values.Select(x => x.N).ToList() };
+                var numbersAsString = new List<string>(values.Count);
+                for (int index = 0; index < values.Count; index++)
+                {
+                    AttributeValue? value = values[index];
+                    numbersAsString.Add(value.N);
+                }
+                return new AttributeValue { NS = numbersAsString };
             }
-            if (values.All(x => x.S is not null))
+            if (!probablyNumberSet && probablyStringSet && !probablyBinarySet)
             {
-                return new AttributeValue { SS = values.Select(x => x.S).ToList() };
+                var strings = new List<string>(values.Count);
+                for (int index = 0; index < values.Count; index++)
+                {
+                    AttributeValue? value = values[index];
+                    strings.Add(value.S);
+                }
+                return new AttributeValue { SS = strings };
             }
-            if (values.All(x => x.B is not null))
+            if (!probablyNumberSet && !probablyStringSet && probablyBinarySet)
             {
-                return new AttributeValue { BS = values.Select(x => x.B).ToList() };
+                var memoryStreams = new List<MemoryStream>(values.Count);
+                for (int index = 0; index < values.Count; index++)
+                {
+                    AttributeValue? value = values[index];
+                    memoryStreams.Add(value.B);
+                }
+                return new AttributeValue { BS = memoryStreams };
             }
             return new AttributeValue { L = values };
         }
