@@ -3,7 +3,6 @@ namespace NServiceBus.Persistence.DynamoDB
 {
     using System;
     using System.Collections.Generic;
-    using System.IO;
     using System.Text.Json;
     using System.Text.Json.Nodes;
     using Amazon.DynamoDBv2.Model;
@@ -11,7 +10,7 @@ namespace NServiceBus.Persistence.DynamoDB
     static class DataSerializer
     {
         static readonly JsonSerializerOptions serializerOptions =
-            new JsonSerializerOptions { Converters = { new MemoryStreamConverter() } };
+            new JsonSerializerOptions { Converters = { new MemoryStreamConverter(), new HashSetMemoryStreamConverter(), new HashSetStringConverter(), new HashSetOfNumberConverter() } };
 
         public static Dictionary<string, AttributeValue> Serialize<TValue>(TValue value)
         {
@@ -74,17 +73,17 @@ namespace NServiceBus.Persistence.DynamoDB
 
             if (element.ValueKind == JsonValueKind.False)
             {
-                return new AttributeValue { BOOL = false };
+                return FalseAttributeValue;
             }
 
             if (element.ValueKind == JsonValueKind.True)
             {
-                return new AttributeValue { BOOL = true };
+                return TrueAttributeValue;
             }
 
             if (element.ValueKind == JsonValueKind.Null)
             {
-                return new AttributeValue { NULL = true };
+                return NullAttributeValue;
             }
 
             if (element.ValueKind == JsonValueKind.Number)
@@ -98,54 +97,10 @@ namespace NServiceBus.Persistence.DynamoDB
         static AttributeValue SerializeElementToList(JsonElement element)
         {
             var values = new List<AttributeValue>();
-            bool probablyNumberSet = false, probablyStringSet = false, probablyBinarySet = false;
             foreach (var innerElement in element.EnumerateArray())
             {
                 AttributeValue serializeElement = SerializeElement(innerElement);
-                if (serializeElement.N is not null)
-                {
-                    probablyNumberSet = true;
-                }
-                else if (serializeElement.S is not null)
-                {
-                    probablyStringSet = true;
-                }
-                else if (serializeElement.B is not null)
-                {
-                    probablyBinarySet = true;
-                }
                 values.Add(serializeElement);
-            }
-
-            if (probablyNumberSet && !probablyStringSet && !probablyBinarySet)
-            {
-                var numbersAsString = new List<string>(values.Count);
-                for (int index = 0; index < values.Count; index++)
-                {
-                    AttributeValue? value = values[index];
-                    numbersAsString.Add(value.N);
-                }
-                return new AttributeValue { NS = numbersAsString };
-            }
-            if (!probablyNumberSet && probablyStringSet && !probablyBinarySet)
-            {
-                var strings = new List<string>(values.Count);
-                for (int index = 0; index < values.Count; index++)
-                {
-                    AttributeValue? value = values[index];
-                    strings.Add(value.S);
-                }
-                return new AttributeValue { SS = strings };
-            }
-            if (!probablyNumberSet && !probablyStringSet && probablyBinarySet)
-            {
-                var memoryStreams = new List<MemoryStream>(values.Count);
-                for (int index = 0; index < values.Count; index++)
-                {
-                    AttributeValue? value = values[index];
-                    memoryStreams.Add(value.B);
-                }
-                return new AttributeValue { BS = memoryStreams };
             }
             return new AttributeValue { L = values };
         }
@@ -154,9 +109,24 @@ namespace NServiceBus.Persistence.DynamoDB
         {
             foreach (var property in element.EnumerateObject())
             {
-                if (property.NameEquals(MemoryStreamConverter.PropertyName))
+                if (MemoryStreamConverter.TryExtract(property, out var stream))
                 {
-                    return new AttributeValue { B = new MemoryStream(property.Value.GetBytesFromBase64()) };
+                    return new AttributeValue { B = stream };
+                }
+
+                if (HashSetMemoryStreamConverter.TryExtract(property, out var streamSet))
+                {
+                    return new AttributeValue { BS = streamSet };
+                }
+
+                if (HashSetOfNumberConverter.TryExtract(property, out var numberSEt))
+                {
+                    return new AttributeValue { NS = numberSEt };
+                }
+
+                if (HashSetStringConverter.TryExtract(property, out var stringSet))
+                {
+                    return new AttributeValue { SS = stringSet };
                 }
             }
             return new AttributeValue { M = SerializeElementToAttributeMap(element) };
@@ -178,60 +148,7 @@ namespace NServiceBus.Persistence.DynamoDB
 
         static JsonNode? DeserializeElement(AttributeValue attributeValue)
         {
-            if (attributeValue.IsMSet)
-            {
-                return DeserializeElementFromAttributeMap(attributeValue.M);
-            }
-
-            if (attributeValue.IsLSet)
-            {
-                return DeserializeElementFromListSet(attributeValue.L);
-            }
-
-            if (attributeValue.B != null)
-            {
-                return new JsonObject
-                {
-                    [MemoryStreamConverter.PropertyName] = Convert.ToBase64String(attributeValue.B.ToArray())
-                };
-            }
-
-            if (attributeValue.BS is { Count: > 0 })
-            {
-                var array = new JsonArray();
-                foreach (var memoryStream in attributeValue.BS)
-                {
-                    array.Add(new JsonObject
-                    {
-                        [MemoryStreamConverter.PropertyName] = Convert.ToBase64String(memoryStream.ToArray())
-                    });
-                }
-
-                return array;
-            }
-
-            if (attributeValue.SS is { Count: > 0 })
-            {
-                var array = new JsonArray();
-                foreach (var stringValue in attributeValue.SS)
-                {
-                    array.Add(stringValue);
-                }
-
-                return array;
-            }
-
-            if (attributeValue.NS is { Count: > 0 })
-            {
-                var array = new JsonArray();
-                foreach (var numberValue in attributeValue.NS)
-                {
-                    array.Add(JsonNode.Parse(numberValue));
-                }
-
-                return array;
-            }
-
+            // check the simple cases first
             if (attributeValue.IsBOOLSet)
             {
                 return attributeValue.BOOL;
@@ -242,12 +159,48 @@ namespace NServiceBus.Persistence.DynamoDB
                 return default;
             }
 
-            if (attributeValue.N != null)
+            if (attributeValue.N is not null)
             {
                 return JsonNode.Parse(attributeValue.N);
             }
 
-            return attributeValue.S;
+            if (attributeValue.S is not null)
+            {
+                return attributeValue.S;
+            }
+
+            if (attributeValue.IsMSet)
+            {
+                return DeserializeElementFromAttributeMap(attributeValue.M);
+            }
+
+            if (attributeValue.IsLSet)
+            {
+                return DeserializeElementFromListSet(attributeValue.L);
+            }
+
+            // check the more complex cases last
+            if (MemoryStreamConverter.TryConvert(attributeValue.B, out var memoryStream))
+            {
+                return memoryStream;
+            }
+
+            if (HashSetMemoryStreamConverter.TryConvert(attributeValue.BS, out var memoryStreams))
+            {
+                return memoryStreams;
+            }
+
+            if (HashSetStringConverter.TryConvert(attributeValue.SS, out var stringHashSet))
+            {
+                return stringHashSet;
+            }
+
+            if (HashSetOfNumberConverter.TrConvert(attributeValue.NS, out var numberHashSet))
+            {
+                return numberHashSet;
+            }
+
+            throw new InvalidOperationException("Unable to convert the provided attribute value into a JsonElement");
         }
 
         static JsonArray DeserializeElementFromListSet(List<AttributeValue> attributeValues)
@@ -259,5 +212,9 @@ namespace NServiceBus.Persistence.DynamoDB
             }
             return array;
         }
+
+        static readonly AttributeValue NullAttributeValue = new() { NULL = true };
+        static readonly AttributeValue TrueAttributeValue = new() { BOOL = true };
+        static readonly AttributeValue FalseAttributeValue = new() { BOOL = false };
     }
 }
