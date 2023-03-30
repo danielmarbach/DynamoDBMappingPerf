@@ -13,8 +13,8 @@ namespace DynamoDBMappingPerf;
 [Config(typeof(Config))]
 public class NestedClassMappingDeserialization
 {
-    private Fixture fixture;
-    private Dictionary<string,AttributeValue> attributeMap;
+    private Fixture? fixture;
+    private Dictionary<string,AttributeValue>? attributeMap;
 
     class Config : ManualConfig
     {
@@ -42,7 +42,7 @@ public class NestedClassMappingDeserialization
     }
 
     [Benchmark(Baseline = true)]
-    public Nested Deserialize_SDK()
+    public Nested? Deserialize_SDK()
     {
         var document = Document.FromAttributeMap(attributeMap);
         var jsonString = document.ToJson();
@@ -50,23 +50,23 @@ public class NestedClassMappingDeserialization
     }
 
     [Benchmark]
-    public Nested Deserialize_Manual()
+    public Nested? Deserialize_Manual()
     {
-        return DataSerializer.Deserialize<Nested>(attributeMap);
+        return Mapper.ToObject<Nested>(attributeMap!);
     }
 
     public class Nested
     {
-        public string String { get; set; }
+        public string? String { get; set; }
         public Guid Guid { get; set; }
         public bool Boolean { get; set; }
 
-        public List<DeeperNested> DeeperNested { get; set; }
+        public List<DeeperNested>? DeeperNested { get; set; }
     }
 
     public class DeeperNested
     {
-        public string String { get; set; }
+        public string? String { get; set; }
         public Guid Guid { get; set; }
         public bool Boolean { get; set; }
     }

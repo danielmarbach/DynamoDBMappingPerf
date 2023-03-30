@@ -14,8 +14,8 @@ namespace DynamoDBMappingPerf;
 [Config(typeof(Config))]
 public class SimpleClassMappingSerialization
 {
-    private Fixture fixture;
-    private Simple simple;
+    private Fixture? fixture;
+    private Simple? simple;
 
     class Config : ManualConfig
     {
@@ -46,15 +46,15 @@ public class SimpleClassMappingSerialization
         return doc.ToAttributeMap();
     }
 
-    [Benchmark()]
+    [Benchmark]
     public Dictionary<string, AttributeValue> Serialize_Manual()
     {
-        return DataSerializer.Serialize(simple);
+        return Mapper.ToMap(simple!);
     }
 
     class Simple
     {
-        public string String { get; set; }
+        public string? String { get; set; }
         public Guid Guid { get; set; }
         public bool Boolean { get; set; }
     }

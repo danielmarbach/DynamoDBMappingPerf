@@ -14,8 +14,8 @@ namespace DynamoDBMappingPerf;
 [Config(typeof(Config))]
 public class SimpleClassMappingDeserialization
 {
-    private Fixture fixture;
-    private Dictionary<string,AttributeValue> attributeMap;
+    private Fixture? fixture;
+    private Dictionary<string,AttributeValue>? attributeMap;
 
     class Config : ManualConfig
     {
@@ -42,7 +42,7 @@ public class SimpleClassMappingDeserialization
     }
 
     [Benchmark(Baseline = true)]
-    public Simple Deserialize_SDK()
+    public Simple? Deserialize_SDK()
     {
         var document = Document.FromAttributeMap(attributeMap);
         var jsonString = document.ToJson();
@@ -50,14 +50,14 @@ public class SimpleClassMappingDeserialization
     }
 
     [Benchmark]
-    public Simple Deserialize_Manual()
+    public Simple? Deserialize_Manual()
     {
-        return DataSerializer.Deserialize<Simple>(attributeMap);
+        return Mapper.ToObject<Simple>(attributeMap!);
     }
 
     public class Simple
     {
-        public string String { get; set; }
+        public string? String { get; set; }
         public Guid Guid { get; set; }
         public bool Boolean { get; set; }
     }

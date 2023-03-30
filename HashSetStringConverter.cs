@@ -1,16 +1,15 @@
-#nullable enable
 namespace NServiceBus.Persistence.DynamoDB
 {
     using System;
     using System.Collections.Generic;
     using System.Reflection;
     using System.Text.Json;
-    using System.Text.Json.Nodes;
     using System.Text.Json.Serialization;
 
     sealed class HashSetStringConverter : JsonConverterFactory
     {
-        public const string PropertyName = "HashSetStringContent838D2F22-0D5B-4831-8C04-17C7A6329B31";
+        // This is a cryptic property name to make sure we never class with the user data
+        const string PropertyName = "HashSetStringContent838D2F22-0D5B-4831-8C04-17C7A6329B31";
 
         public override bool CanConvert(Type typeToConvert)
             => typeToConvert.IsGenericType && typeof(ISet<string>).IsAssignableFrom(typeToConvert);
@@ -29,42 +28,9 @@ namespace NServiceBus.Persistence.DynamoDB
 
         sealed class SetConverter<TSet> : JsonConverter<TSet> where TSet : ISet<string>
         {
-            public override TSet? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-            {
-                if (reader.TokenType != JsonTokenType.StartObject)
-                {
-                    throw new JsonException();
-                }
-
-                reader.Read();
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                {
-                    throw new JsonException();
-                }
-
-                string? propertyName = reader.GetString();
-                if (propertyName != PropertyName)
-                {
-                    throw new JsonException();
-                }
-
-                reader.Read();
-                if (reader.TokenType != JsonTokenType.StartArray)
-                {
-                    throw new JsonException();
-                }
-
-                // Deliberately not passing the options to use the default json serialization behavior
-                var set = JsonSerializer.Deserialize<TSet>(ref reader);
-
-                reader.Read();
-
-                if (reader.TokenType != JsonTokenType.EndObject)
-                {
-                    throw new JsonException();
-                }
-                return set;
-            }
+            public override TSet? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+                throw new NotImplementedException(
+                $"The {GetType().FullName} should never be used on the read path since its sole purpose is to preserve information on the write path");
 
             public override void Write(Utf8JsonWriter writer, TSet value, JsonSerializerOptions options)
             {
@@ -91,24 +57,6 @@ namespace NServiceBus.Persistence.DynamoDB
             }
 
             strings ??= new List<string?>(0);
-            return true;
-        }
-
-        public static bool TryConvert(List<string> strings, out JsonObject? jsonObject)
-        {
-            jsonObject = null;
-            if (strings is not { Count: > 0 })
-            {
-                return false;
-            }
-
-            jsonObject = new JsonObject();
-            var stringHashSetContent = new JsonArray();
-            foreach (var stringValue in strings)
-            {
-                stringHashSetContent.Add(stringValue);
-            }
-            jsonObject.Add(PropertyName, stringHashSetContent);
             return true;
         }
     }

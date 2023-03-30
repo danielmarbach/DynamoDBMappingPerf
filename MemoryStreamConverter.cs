@@ -1,5 +1,3 @@
-#nullable enable
-
 namespace NServiceBus.Persistence.DynamoDB
 {
     using System;
@@ -10,7 +8,8 @@ namespace NServiceBus.Persistence.DynamoDB
 
     sealed class MemoryStreamConverter : JsonConverter<MemoryStream>
     {
-        public const string PropertyName = "MemoryStreamContent838D2F22-0D5B-4831-8C04-17C7A6329B31";
+        // This is a cryptic property name to make sure we never class with the user data
+        const string PropertyName = "MemoryStreamContent838D2F22-0D5B-4831-8C04-17C7A6329B31";
 
         public override MemoryStream Read(ref Utf8JsonReader reader, Type typeToConvert,
             JsonSerializerOptions options)
@@ -66,19 +65,10 @@ namespace NServiceBus.Persistence.DynamoDB
             return true;
         }
 
-        public static bool TryConvert(MemoryStream? memoryStream, out JsonObject? jsonObject)
-        {
-            jsonObject = null;
-            if (memoryStream is null)
-            {
-                return false;
-            }
-
-            jsonObject = new JsonObject
+        public static JsonNode ToNode(MemoryStream memoryStream) =>
+            new JsonObject
             {
                 [PropertyName] = Convert.ToBase64String(memoryStream.ToArray())
             };
-            return true;
-        }
     }
 }
